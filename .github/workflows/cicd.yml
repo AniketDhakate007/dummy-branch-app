@@ -1,64 +1,79 @@
-name: CI/CD Pipeline
+name: CI/CD Pipeline (GHCR, env-aware)
 
 on:
+  workflow_dispatch:
   push:
-    branches: ["main"]
+    branches: [ "main", "staging", "dev" ]
   pull_request:
-    branches: ["main"]
+    branches: [ "main", "staging", "dev" ]
 
 env:
   IMAGE_NAME: dummy-branch-app
-  GHCR_USER_LOWER: ${{ toLower(github.repository_owner) }}
 
 jobs:
-  build-and-push:
+  build-and-publish:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
 
     steps:
-      # Checkout repository
-      - name: Checkout code
-        uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      # Login to GitHub Container Registry
+      - name: Set lowercase owner in env (WORKAROUND)
+        # This computes a lowercase owner and exposes it as OWNER_LOWER
+        run: |
+          echo "OWNER_RAW=${{ github.repository_owner }}" >> $GITHUB_ENV
+          echo "OWNER_LOWER=$(echo \"${{ github.repository_owner }}\" | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
+      - name: Show resolved owner (debug)
+        run: |
+          echo "owner_raw=$OWNER_RAW"
+          echo "owner_lower=$OWNER_LOWER"
+
       - name: Login to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ secrets.GHCR_USERNAME }}
-          password: ${{ secrets.GHCR_TOKEN }}
+        run: echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
-      # Build Docker image
-      - name: Build Docker Image
+      - name: Build Docker image (SHA tag)
         run: |
-          docker build -t ghcr.io/${{ secrets.GHCR_USERNAME }}/${{ env.IMAGE_NAME }}:${GITHUB_SHA} .
+          IMAGE_ID="ghcr.io/${OWNER_LOWER}/${IMAGE_NAME}"
+          echo "IMAGE_ID=$IMAGE_ID" >> $GITHUB_ENV
+          docker build -t ${IMAGE_ID}:${GITHUB_SHA} .
 
-      # Tag image based on environment
-      - name: Tag Image (env-aware)
+      - name: Set env-specific tag
         run: |
-          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+          # Decide tag based on branch
+          if [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
             ENV_TAG="prod-latest"
-          elif [[ "${{ github.ref }}" == "refs/heads/staging" ]]; then
+          elif [[ "${GITHUB_REF}" == "refs/heads/staging" ]]; then
             ENV_TAG="staging-latest"
-          elif [[ "${{ github.ref }}" == "refs/heads/dev" ]]; then
+          elif [[ "${GITHUB_REF}" == "refs/heads/dev" ]]; then
             ENV_TAG="dev-latest"
           else
-            ENV_TAG="test-${GITHUB_SHA}"
+            ENV_TAG="pr-${GITHUB_RUN_ID}"
           fi
+          echo "ENV_TAG=$ENV_TAG" >> $GITHUB_ENV
+          echo "Tagging ${IMAGE_ID}:${GITHUB_SHA} as ${IMAGE_ID}:${ENV_TAG}"
+          docker tag ${IMAGE_ID}:${GITHUB_SHA} ${IMAGE_ID}:${ENV_TAG}
 
-          docker tag \
-            ghcr.io/${{ secrets.GHCR_USERNAME }}/${{ env.IMAGE_NAME }}:${GITHUB_SHA} \
-            ghcr.io/${{ secrets.GHCR_USERNAME }}/${{ env.IMAGE_NAME }}:$ENV_TAG
-
-      # Security Scan (Trivy)
-      - name: Run Security Scan (Trivy)
-        uses: aquasecurity/trivy-action@master
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@v0.20.0
         with:
-          image-ref: ghcr.io/${{ env.GHCR_USER_LOWER }}/${{ env.IMAGE_NAME }}:${GITHUB_SHA}
+          image-ref: ghcr.io/${{ env.OWNER_LOWER }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
           severity: HIGH,CRITICAL
           ignore-unfixed: true
 
-      # Push images
-      - name: Push Docker Images
+      - name: Push images to GHCR (only for selected branches)
+        if: always()
         run: |
-          docker push ghcr.io/${{ secrets.GHCR_USERNAME }}/${{ env.IMAGE_NAME }}:${GITHUB_SHA}
-          docker push ghcr.io/${{ secrets.GHCR_USERNAME }}/${{ env.IMAGE_NAME }}:$ENV_TAG
+          IMAGE_ID="ghcr.io/${OWNER_LOWER}/${IMAGE_NAME}"
+          echo "Pushing images for branch ${GITHUB_REF}"
+          # Always push SHA-tag so we have an immutable artifact (allowed on PRs too if you want)
+          docker push ${IMAGE_ID}:${GITHUB_SHA} || echo "push SHA failed"
+          # Push env tag only for the recognized branches
+          if [[ "${GITHUB_REF}" == "refs/heads/main" || "${GITHUB_REF}" == "refs/heads/staging" || "${GITHUB_REF}" == "refs/heads/dev" ]]; then
+            docker push ${IMAGE_ID}:${ENV_TAG}
+          else
+            echo "Not pushing ENV_TAG for branch ${GITHUB_REF}"
+          fi

@@ -8,7 +8,7 @@ on:
 
 env:
   IMAGE_NAME: dummy-branch-app
-  GHCR_USER_LOWER: ${{ github.repository_owner | toLower }}
+  GHCR_USER_LOWER: ${{ toLower(github.repository_owner) }}
 
 jobs:
   build-and-push:

@@ -21,29 +21,29 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set lowercase owner in env (WORKAROUND)
-        # This computes a lowercase owner and exposes it as OWNER_LOWER
+      - name: Compute owner lowercase
         run: |
-          echo "OWNER_RAW=${{ github.repository_owner }}" >> $GITHUB_ENV
-          echo "OWNER_LOWER=$(echo \"${{ github.repository_owner }}\" | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+          OWNER_RAW="${{ github.repository_owner }}"
+          OWNER_LOWER=$(echo "$OWNER_RAW" | tr '[:upper:]' '[:lower:]')
+          echo "OWNER_RAW=$OWNER_RAW" >> $GITHUB_ENV
+          echo "OWNER_LOWER=$OWNER_LOWER" >> $GITHUB_ENV
+          echo "IMAGE_ID=ghcr.io/$OWNER_LOWER/${IMAGE_NAME}" >> $GITHUB_ENV
 
-      - name: Show resolved owner (debug)
+      - name: Debug owner + image_id
         run: |
-          echo "owner_raw=$OWNER_RAW"
-          echo "owner_lower=$OWNER_LOWER"
+          echo "OWNER_RAW=$OWNER_RAW"
+          echo "OWNER_LOWER=$OWNER_LOWER"
+          echo "IMAGE_ID=$IMAGE_ID"
 
       - name: Login to GHCR
         run: echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
       - name: Build Docker image (SHA tag)
         run: |
-          IMAGE_ID="ghcr.io/${OWNER_LOWER}/${IMAGE_NAME}"
-          echo "IMAGE_ID=$IMAGE_ID" >> $GITHUB_ENV
           docker build -t ${IMAGE_ID}:${GITHUB_SHA} .
 
-      - name: Set env-specific tag
+      - name: Compute env tag (based on branch)
         run: |
-          # Decide tag based on branch
           if [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
             ENV_TAG="prod-latest"
           elif [[ "${GITHUB_REF}" == "refs/heads/staging" ]]; then
@@ -53,27 +53,28 @@ jobs:
           else
             ENV_TAG="pr-${GITHUB_RUN_ID}"
           fi
+
           echo "ENV_TAG=$ENV_TAG" >> $GITHUB_ENV
-          echo "Tagging ${IMAGE_ID}:${GITHUB_SHA} as ${IMAGE_ID}:${ENV_TAG}"
           docker tag ${IMAGE_ID}:${GITHUB_SHA} ${IMAGE_ID}:${ENV_TAG}
 
-      - name: Scan image with Trivy
+      - name: Trivy Security Scan
         uses: aquasecurity/trivy-action@0.24.0
         with:
+          scan-type: image
           image-ref: ghcr.io/${{ env.OWNER_LOWER }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
           severity: HIGH,CRITICAL
           ignore-unfixed: true
 
-      - name: Push images to GHCR (only for selected branches)
-        if: always()
+      - name: Push images to GHCR
         run: |
-          IMAGE_ID="ghcr.io/${OWNER_LOWER}/${IMAGE_NAME}"
-          echo "Pushing images for branch ${GITHUB_REF}"
-          # Always push SHA-tag so we have an immutable artifact (allowed on PRs too if you want)
-          docker push ${IMAGE_ID}:${GITHUB_SHA} || echo "push SHA failed"
-          # Push env tag only for the recognized branches
-          if [[ "${GITHUB_REF}" == "refs/heads/main" || "${GITHUB_REF}" == "refs/heads/staging" || "${GITHUB_REF}" == "refs/heads/dev" ]]; then
+          echo "Pushing SHA tag"
+          docker push ${IMAGE_ID}:${GITHUB_SHA}
+
+          if [[ "${GITHUB_REF}" == "refs/heads/main" || \
+                "${GITHUB_REF}" == "refs/heads/staging" || \
+                "${GITHUB_REF}" == "refs/heads/dev" ]]; then
+            echo "Pushing environment tag: ${ENV_TAG}"
             docker push ${IMAGE_ID}:${ENV_TAG}
           else
-            echo "Not pushing ENV_TAG for branch ${GITHUB_REF}"
+            echo "Skipping env tag for non-target branches."
           fi

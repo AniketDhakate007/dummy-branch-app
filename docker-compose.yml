@@ -1,35 +1,40 @@
 services:
   api:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    command: gunicorn -w 2 -b 0.0.0.0:8000 wsgi:app
+    build: .
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT}
+      FLASK_ENV: ${FLASK_ENV}
+      LOG_LEVEL: ${API_LOG_LEVEL}
+      DATABASE_URL: postgresql+psycopg2://${DB_USER}:${DB_PASSWORD}@db:${DB_PORT}/${DB_NAME}
+      PORT: ${API_PORT}
+    ports:
+      - "${API_PORT}:${API_PORT}"
     depends_on:
       db:
         condition: service_healthy
-    environment:
-      FLASK_ENV: development
-      DATABASE_URL: postgresql+psycopg2://postgres:postgres@db:5432/microloans
-      PORT: "8000"
-      PYTHONPATH: /app
-    ports:
-      - "8000:8000"
+    command: >
+      sh -c "
+        alembic upgrade head &&
+        gunicorn -w 2 -b 0.0.0.0:${API_PORT} wsgi:app
+      "
     networks:
       - loans_net
-
 
   db:
     image: postgres:16
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: microloans
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_INIT_DB_NAME}
+      PGDATA: ${PGDATA}
     ports:
       - "5432:5432"
     volumes:
-      - db_data:/var/lib/postgresql/data
+      - db_data_dev:/var/lib/postgresql/data
+      - db_data_staging:/var/lib/postgresql/data
+      - db_data_prod:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d microloans"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${POSTGRES_INIT_DB_NAME}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -37,6 +42,7 @@ services:
       - loans_net
 
   nginx:
+    profiles: ["staging", "production"]
     image: nginx:latest
     depends_on:
       api:
@@ -49,10 +55,12 @@ services:
     networks:
       - loans_net
 
-
 networks:
   loans_net:
     driver: bridge
 
 volumes:
-  db_data:
+  db_data_dev:
+  db_data_staging:
+  db_data_prod:
+

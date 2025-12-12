@@ -1,0 +1,63 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+env:
+  IMAGE_NAME: dummy-branch-app
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Checkout repository
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # Login to GitHub Container Registry
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ secrets.GHCR_USERNAME }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
+      # Build Docker image
+      - name: Build Docker Image
+        run: |
+          docker build -t ghcr.io/${{ secrets.GHCR_USERNAME }}/${{ env.IMAGE_NAME }}:${GITHUB_SHA} .
+
+      # Tag image based on environment
+      - name: Tag Image (env-aware)
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            ENV_TAG="prod-latest"
+          elif [[ "${{ github.ref }}" == "refs/heads/staging" ]]; then
+            ENV_TAG="staging-latest"
+          elif [[ "${{ github.ref }}" == "refs/heads/dev" ]]; then
+            ENV_TAG="dev-latest"
+          else
+            ENV_TAG="test-${GITHUB_SHA}"
+          fi
+
+          docker tag \
+            ghcr.io/${{ secrets.GHCR_USERNAME }}/${{ env.IMAGE_NAME }}:${GITHUB_SHA} \
+            ghcr.io/${{ secrets.GHCR_USERNAME }}/${{ env.IMAGE_NAME }}:$ENV_TAG
+
+      # Security Scan (Trivy)
+      - name: Run Security Scan (Trivy)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ghcr.io/${{ secrets.GHCR_USERNAME }}/${{ env.IMAGE_NAME }}:${GITHUB_SHA}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+
+      # Push images
+      - name: Push Docker Images
+        run: |
+          docker push ghcr.io/${{ secrets.GHCR_USERNAME }}/${{ env.IMAGE_NAME }}:${GITHUB_SHA}
+          docker push ghcr.io/${{ secrets.GHCR_USERNAME }}/${{ env.IMAGE_NAME }}:$ENV_TAG

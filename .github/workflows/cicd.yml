@@ -58,7 +58,7 @@ jobs:
           docker tag ${IMAGE_ID}:${GITHUB_SHA} ${IMAGE_ID}:${ENV_TAG}
 
       - name: Scan image with Trivy
-        uses: aquasecurity/trivy-action@latest
+        uses: aquasecurity/trivy-action@0.24.0
         with:
           image-ref: ghcr.io/${{ env.OWNER_LOWER }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
           severity: HIGH,CRITICAL

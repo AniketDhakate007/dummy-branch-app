@@ -40,8 +40,6 @@ It supports **development**, **staging**, and **production** environments with a
 ├── .env.prod # Environment variables (production)
 └── .github/workflows/cicd.yml # CI/CD Pipeline
 
-yaml
-Copy code
 
 ---
 
@@ -59,71 +57,59 @@ DB_NAME=microloans_dev
 POSTGRES_INIT_DB_NAME=microloans_dev
 PGDATA=/var/lib/postgresql/data
 
-csharp
-Copy code
+
 
 ### 2. Start services
 ```sh
 docker compose --env-file .env.dev up --build
-3. API is now available at:
-arduino
-Copy code
+```
+
+---
+
+### 3. API is now available at:
 http://localhost:8000
 🌐 Running Staging / Production Images
 Images are automatically published to:
-
-bash
-Copy code
+```sh
 ghcr.io/aniketdhakate007/dummy-branch-app
+```
 Pull images:
 Dev:
-sh
-Copy code
+```sh
 docker pull ghcr.io/aniketdhakate007/dummy-branch-app:dev-latest
+```
 Staging:
-sh
-Copy code
+```sh
 docker pull ghcr.io/aniketdhakate007/dummy-branch-app:staging-latest
+```
 Production:
-sh
-Copy code
+```sh
 docker pull ghcr.io/aniketdhakate007/dummy-branch-app:prod-latest
+```
 Run image locally:
-sh
-Copy code
+```sh
 docker run -p 8000:8000 \
   -e DATABASE_URL="postgresql+psycopg2://postgres:postgres@host:5432/microloans_dev" \
   ghcr.io/aniketdhakate007/dummy-branch-app:dev-latest
-🔑 Authentication for GHCR
-Run:
 
-sh
-Copy code
-docker login ghcr.io
-Use:
-
-makefile
-Copy code
-Username: aniketdhakate007
-Password: <your GitHub PAT>
+```
 🔥 API Endpoints
 Base URL (local):
-arduino
-Copy code
+
 http://localhost:8000
 1️⃣ Health Check
 GET /health
 Response:
 
 json
-Copy code
+```sh
 { "status": "ok", "message": "Service healthy" }
+```
 2️⃣ Create Loan
 POST /loans
 Request Body:
 
-json
-Copy code
+```sh
 {
   "borrower_id": "12345",
   "amount": 1000,
@@ -131,23 +117,14 @@ Copy code
 }
 Note: borrower_id MUST be a string.
 
-Response:
 
-json
-Copy code
-{
-  "loan_id": "abc123",
-  "borrower_id": "12345",
-  "amount": 1000,
-  "duration_months": 12,
-  "status": "PENDING"
-}
+```
 3️⃣ Get All Loans
 GET /loans
 Response:
 
-json
-Copy code
+
+```sh
 [
   {
     "loan_id": "abc123",
@@ -157,17 +134,18 @@ Copy code
     "status": "PENDING"
   }
 ]
+
+```
 4️⃣ Get Loan by ID
 GET /loans/{loan_id}
 Example:
 
-bash
-Copy code
+```sh
 GET /loans/abc123
 Response:
 
 json
-Copy code
+
 {
   "loan_id": "abc123",
   "borrower_id": "12345",
@@ -175,24 +153,23 @@ Copy code
   "duration_months": 12,
   "status": "PENDING"
 }
+```
 🔐 SSL/HTTPS (Production)
 Place generated SSL certs in:
 
-bash
-Copy code
+```sh
 /certs/cert.pem
 /certs/key.pem
 NGINX automatically loads them and serves:
 
-arduino
-Copy code
 https://your-domain.com
+```
 🤖 CI/CD Pipeline Summary (GitHub Actions)
 Located at:
 
-bash
-Copy code
+```sh
 .github/workflows/cicd.yml
+```
 Pipeline Includes:
 ✔ Build
 ✔ Docker image creation
@@ -209,21 +186,18 @@ Manual dispatch
 
 🧪 Testing the API (Sample CURL Commands)
 Create loan:
-sh
-Copy code
+```sh
 curl -X POST http://localhost:8000/loans \
   -H "Content-Type: application/json" \
   -d '{"borrower_id":"123", "amount":5000, "duration_months":6}'
 Get loans:
-sh
-Copy code
+
 curl http://localhost:8000/loans
 Get loan by ID:
-sh
-Copy code
+
 curl http://localhost:8000/loans/<id>
-📜 License
-MIT License — free to use for personal and academic purposes.
+```
+
 
 👤 Author
 Aniket Dhakate
